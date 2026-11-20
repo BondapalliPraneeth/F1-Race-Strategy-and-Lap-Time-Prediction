@@ -25,7 +25,7 @@ Test status reflects runs on the author's Windows machine (and Docker Desktop) o
 | 12 docs, diagrams, demo, screenshots | Done | – | `docs/` |
 
 ## Last local results
-* Backend: 45 tests passed, 86 % line coverage (before `test_db.py`; the 2 DB tests and the changed API tests pass separately). ruff and mypy clean.
+* Backend: 47 tests passed, 87 % line coverage (final run after model v5). ruff and mypy clean.
 * Frontend: vitest 19 passed; oxlint warnings only (3); production build OK.
 * E2E: 4 passed (seeded DB).
 
