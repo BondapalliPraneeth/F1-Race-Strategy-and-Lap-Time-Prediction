@@ -1,35 +1,33 @@
 # Model Evaluation (real results)
 
 Evaluated on **held-out future races** (chronological split). Numbers below come from `model_versions.metrics` of the
-active model **v3** trained on the author's local database; regenerate with `python -m app.cli train`.
+active model **v4** trained on the author's local database; regenerate with `python -m app.cli train`.
 
-**Data**: 48 races with laps (2022: 2 races, 2023: 22, 2024: 24), 52,749 laps from Jolpica-F1. Train: 41 races
-(38,829 clean laps); calibration: 2024 Singapore, United States, Mexico City; **test: 2024 São Paulo, Las Vegas, Qatar, Abu Dhabi** (3,377 laps).
-(Ingesting 2022/2021 was throttled by the source with HTTP 429, so only 2 early-2022 races were loaded.)
+**Data**: 85 races with laps (2021–2024, some 2021/2022 rounds unavailable from the source), 92,337 laps from Jolpica-F1.
+Train: 73 races (68,984 clean laps); calibration: 2024 Singapore, United States, Mexico City; **test: 2024 São Paulo, Las Vegas, Qatar, Abu Dhabi** (3,377 laps).
+Four training races were excluded by the abnormal-pace rule.
 
-| Metric (test laps) | Model v3 | Baseline: circuit median | Baseline: + tyre age |
+| Metric (test laps) | Model v4 | Baseline: circuit median | Baseline: + tyre age |
 |---|---|---|---|
-| MAE | **3,008 ms** | 3,245 ms | 3,278 ms |
-| RMSE | 4,491 ms | – | – |
-| Bias (pred − actual) | −1,693 ms | – | – |
-| 80 % interval coverage | **0.64** (target 0.80) | – | – |
-| Mean interval width | 5,913 ms | – | – |
+| MAE | **3,034 ms** | 3,281 ms | 3,299 ms |
+| RMSE | 4,493 ms | – | – |
+| Bias (pred − actual) | −1,758 ms | – | – |
+| 80 % interval coverage | **0.65** (target 0.80) | – | – |
+| Mean interval width | 5,088 ms | – | – |
 
-Per-race MAE: São Paulo **8,230 ms**, Las Vegas 674 ms, Qatar 2,201 ms, Abu Dhabi 692 ms.
+Per-race MAE: São Paulo **8,236 ms**, Las Vegas 770 ms, Qatar 1,992 ms, Abu Dhabi 857 ms.
 
 ## Interpretation (honest)
 
-* The model beats both naive baselines overall, but the headline is dominated by **São Paulo 2024, a wet,
-  red-flagged race**. On the three dry races MAE is 0.7–2.2 s, and the wet race inflates MAE, bias (the model predicts
-  dry pace) and under-coverage. Without weather data this cannot be fixed, only detected.
-* The abnormal-pace flag did **not** trigger here: it needs ≥ 3 races per circuit and only two full seasons are
-  loaded. Stratified metrics (`strata`) will populate once ≥ 3 seasons are ingested.
-* Coverage 0.64 < 0.80: conformal calibration raised coverage (earlier uncalibrated model: 0.43 on the same kind of
-  split) but calibration races are dry and the test set contains a wet race, so shift remains.
-* Gains over the circuit-median baseline are modest (≈ 7 %) because pace within a race is largely explained by
-  circuit and by driver/car, and the missing compound/weather information is exactly what drives lap-to-lap variance.
-* Adding tyre age to the median baseline does not help on its own (3,278 vs 3,245 ms), consistent with age
-  being a noisy lower bound without compound data; the model's gain comes from driver/team/lap/progress interactions.
+* The model beats both naive baselines (≈ 7.5 % lower MAE), but the headline is dominated by **São Paulo 2024, a wet,
+  red-flagged race**. On the three dry races MAE is 0.8–2.0 s. Without weather data this cannot be fixed, only detected.
+* The abnormal-pace flag excluded 4 training races but did **not** flag São Paulo 2024 itself (it is not in the strata,
+  `strata: {}`), so the rule is a coarse proxy that misses this case. I did not tune the threshold on the test race, to avoid leakage.
+* Coverage 0.65 < 0.80: conformal calibration helps (an earlier uncalibrated model reached 0.43 on a similar split) but
+  the calibration races are dry and the test set contains a wet race, so shift remains.
+* Adding tyre age to the median baseline does not help on its own (3,299 vs 3,281 ms): without compound data, age is a
+  noisy lower bound. The model's gain comes from driver/team/lap/progress interactions.
+* More data (46 → 85 races) barely changed test MAE (3,008 → 3,034 ms): the error is dominated by the wet race, not by sample size.
 
 ## Reproduce
 ```bash
