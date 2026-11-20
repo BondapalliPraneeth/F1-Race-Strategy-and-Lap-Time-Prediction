@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.models import Lap, Race, Result
 
 FEATURE_SPEC_VERSION = "v1"
-NUMERIC = ["tyre_age", "lap_number", "race_progress", "stint_number", "grid", "season"]
+NUMERIC = ["tyre_age", "lap_number", "race_progress", "grid", "season"]
 CATEGORICAL = ["constructor_id", "driver_id"]
 OPTIONAL_CATEGORICAL = ["compound"]  # used only when the data actually has it
 TARGET = "delta_ms"  # lap time minus the circuit baseline (baseline fitted on training races only)
