@@ -5,9 +5,9 @@ lap-time model with calibrated uncertainty, estimates tyre degradation, finds th
 dynamic programming, and compares strategies with a Monte Carlo what-if simulator – all behind a FastAPI backend and a
 React dashboard.
 
-> **Honesty first.** The only accessible free source (Jolpica-F1) has **no tyre-compound or weather data**. The app
-> never fakes it: compound behaviour in the optimizer is an *editable, labelled assumption*, weather is an empty
-> state, and every chart/number is tagged **ACTUAL / PREDICTED / SIMULATED** with its source. Read
+> **Honesty first.** Lap times come from Jolpica-F1; tyre compound, true tyre life, weather and safety-car labels come from a licensed
+> (CC BY 4.0) FastF1-derived Mendeley dataset covering 2022–2025. Where a race is not covered the fields stay empty — nothing is faked. The model
+> does **not** gain accuracy from compound, and compound effects are confounded by strategy; the UI and docs say so. Every chart/number is tagged
 > [LIMITATIONS](docs/LIMITATIONS.md) and [MODEL_EVALUATION](docs/MODEL_EVALUATION.md) before judging the numbers.
 
 ![Optimizer](docs/screenshots/04-optimize.png)
@@ -36,9 +36,9 @@ Screenshots (real data): [analysis](docs/screenshots/01-analysis.png), [predicti
 
 ## Results (real, held-out future races)
 
-Model v5 trained on 73 races (2021–2024) and tested on the last four races of 2024:
-MAE **3,034 ms** vs **3,281 ms** circuit-median baseline; 80 % interval coverage **0.65** (target 0.80); the dry
-races have MAE 0.8–2.0 s, the wet São Paulo race 8.2 s. Details and caveats: [MODEL_EVALUATION](docs/MODEL_EVALUATION.md).
+Model v6 (90 training races, 2021–2025, compound + true tyre life + weather-filtered) tested on the last four races of 2025:
+MAE **806 ms** vs **1,541 ms** circuit-median baseline; 80 % interval coverage **0.80**. Compound adds nothing measurable (793 ms without it) and
+these numbers are not comparable with the earlier wet-race-dominated v5 test set. Details: [MODEL_EVALUATION](docs/MODEL_EVALUATION.md).
 
 Measured latency (local, laptop, SQLite, 2 seasons): list/laps ≈ 0.3 s, prediction ≈ 0.35–0.45 s, optimise ≈ 1.5–2.5 s
 (≈ 0.9 s compute), simulate 5k–20k runs ≈ 0.6–0.7 s, full model training ≈ 73 s.
@@ -55,7 +55,9 @@ docker compose --profile tools run --rm train
 # Without Docker
 cd backend && python -m venv .venv && .venv/Scripts/pip install -r requirements.txt -r requirements-dev.txt
 export F1_DATABASE_URL=sqlite:///data/dev.db
-python -m app.cli migrate && python -m app.cli ingest --season 2024 && python -m app.cli train
+python -m app.cli migrate && python -m app.cli ingest --season 2024
+python -m app.cli fetch-tyres && python -m app.cli ingest-tyres --dir data/tyre_cache   # compound, tyre life, weather, SC labels (CC BY 4.0 Mendeley dataset)
+python -m app.cli train
 uvicorn app.main:app --port 8000
 cd ../frontend && npm ci && npm run dev            # http://localhost:5173
 ```

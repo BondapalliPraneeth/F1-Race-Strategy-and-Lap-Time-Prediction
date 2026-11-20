@@ -40,7 +40,7 @@ export function toParams(f: FormState): StrategyParams {
   return p
 }
 
-export function ParamsForm({ value, onChange }: { value: FormState; onChange: (v: FormState) => void }) {
+export function ParamsForm({ value, onChange, dataDerived = false }: { value: FormState; onChange: (v: FormState) => void; dataDerived?: boolean }) {
   const errors = validate(value)
   const set = (k: keyof FormState, v: string) => onChange({ ...value, [k]: v })
   const setC = (c: string, k: keyof CompoundProfile, v: string) =>
@@ -66,7 +66,9 @@ export function ParamsForm({ value, onChange }: { value: FormState; onChange: (v
           <small>Assumption; 0 = clean air</small></label>
       </div>
       <details open>
-        <summary>Compound profiles <Badge kind="assumption" /> — the data source publishes no tyre data, so these are editable hypotheses</summary>
+        <summary>Compound profiles {dataDerived
+          ? <><Badge kind="derived" /> — max stint = 90th percentile of real stints on this compound; pace comes from the model, so offset 0 / multiplier 1 (editable what-ifs)</>
+          : <><Badge kind="assumption" /> — no tyre data for this model, so these are editable hypotheses</>}</summary>
         <table className="compact">
           <thead><tr><th>Compound</th><th>Pace offset (ms/lap)</th><th>Degradation ×</th><th>Max stint (laps)</th></tr></thead>
           <tbody>{Object.entries(value.compounds).map(([c, p]) => (

@@ -83,8 +83,8 @@ def calibrate(b: Bundle, calib: pd.DataFrame, coverage: float = 0.8) -> float:
     return float(np.quantile(scores, min(1.0, coverage * (1 + 1 / n)), method="higher"))
 
 
-def fit(train: pd.DataFrame) -> Bundle:
-    numeric, cats = F.feature_columns(train)
+def fit(train: pd.DataFrame, use_optional: bool = True) -> Bundle:
+    numeric, cats = F.feature_columns(train, use_optional)
     baselines = F.circuit_baselines(train)
     enc = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
     if cats:
@@ -121,8 +121,8 @@ def evaluate(b: Bundle, train: pd.DataFrame, test: pd.DataFrame) -> dict[str, An
     naive_age = naive + icpt + slope * test["tyre_age"].to_numpy(dtype=float)
     mae = lambda e: float(np.mean(np.abs(e)))  # noqa: E731
     ratio = F.race_pace_ratio(test, b.reference or {})
-    abnormal = {int(r) for r in ratio[ratio > F.ABNORMAL_PACE_RATIO].index}
-    classified = {int(r) for r in ratio.index}
+    abnormal = set(F.abnormal_pace_races(test, b.reference or {}))
+    classified = {int(r) for r in ratio.index} | abnormal
     rid = test["race_id"].to_numpy()
     strata: dict[str, Any] = {}
     for name, ids in (("normal_pace_races", classified - abnormal), ("abnormal_pace_races", abnormal)):
@@ -132,7 +132,7 @@ def evaluate(b: Bundle, train: pd.DataFrame, test: pd.DataFrame) -> dict[str, An
                             "interval_80_coverage": float(((y[mk] >= pred["p10"].to_numpy()[mk]) & (y[mk] <= pred["p90"].to_numpy()[mk])).mean())}
     return {
         "strata": strata,
-        "abnormal_pace_rule": f"race median clean lap > {F.ABNORMAL_PACE_RATIO}x circuit reference pace (proxy for wet/red-flag races; no weather data available)",
+        "abnormal_pace_rule": f"race median clean lap > {F.ABNORMAL_PACE_RATIO}x circuit reference pace (wet/red-flag proxy), OR rainfall / wet tyres on > {F.WET_SHARE:.0%} of laps where weather data exists",
         "n_test_laps": int(len(test)),
         "mae_ms": mae(err), "rmse_ms": float(np.sqrt(np.mean(err**2))), "bias_ms": float(err.mean()),
         "baseline_circuit_median_mae_ms": mae(naive - y),
@@ -167,6 +167,14 @@ def train_and_register(session: Session, test_races: int = 4, name: str = "lapti
         bundle.conformal_q = calibrate(bundle, train_ok[train_ok["race_id"].isin(calib_ids)])
     metrics = evaluate(bundle, train, test)
     metrics["n_train_laps"] = int(len(train))
+    if "compound" in bundle.categorical:  # ablation on the same split: what does the real compound feature buy?
+        nb = fit(train, use_optional=False)
+        nb.reference, nb.conformal_q = reference, 0.0
+        tt = test[test["circuit_id"].isin(nb.baselines.keys())]
+        metrics["ablation_without_compound"] = {
+            "mae_ms": float(np.mean(np.abs(predict_ms(nb, tt)["p50"].to_numpy() - tt["lap_time_ms"].to_numpy(dtype=float)))),
+            "note": "same split, same training laps, compound feature removed (interval not conformalised)"}
+        metrics["compound_coverage_train"] = float(train["compound"].notna().mean())
     metrics["excluded_abnormal_training_races"] = [int(x) for x in excluded]
     metrics["calibration_races"] = [int(x) for x in calib_ids]
     metrics["conformal_q_ms"] = bundle.conformal_q

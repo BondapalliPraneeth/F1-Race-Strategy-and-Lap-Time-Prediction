@@ -1,3 +1,5 @@
+import { DataContextPanel } from './DataContext'
+import type { StrategyContext } from '../api'
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { ApiError } from '../api'
@@ -60,5 +62,28 @@ describe('StintBar', () => {
   it('has an accessible description of the plan', () => {
     render(<StintBar stints={[{ compound: 'MEDIUM', laps: 25 }, { compound: 'HARD', laps: 30 }]} />)
     expect(screen.getByRole('img')).toHaveAttribute('aria-label', 'MEDIUM 25 laps, HARD 30 laps')
+  })
+})
+
+describe('DataContextPanel', () => {
+  const ctx: StrategyContext = {
+    compound_profile_source: 'data', model_uses_compound: true,
+    compound_profiles: { SOFT: { offset_ms: 0, degradation_multiplier: 1, max_stint_laps: 24 } },
+    compound_evidence: { SOFT: { scope: 'circuit', n_stints: 60, median_stint_laps: 14, p90_stint_laps: 24, longest_stint_laps: 38 } },
+    safety_car: { available: true, scope: 'all_circuits', n_races: 90, sc_probability: 0.5, vsc_probability: 0.25, sc_mean_laps_per_period: 4.8 },
+    weather: { available: true, air_temp_c: { min: 16, mean: 16.5, max: 17 }, track_temp_c: { min: 17, mean: 17.3, max: 18 }, humidity_pct_mean: 38, rain_lap_share: 0 },
+  }
+  it('shows real stint, safety-car and weather figures', () => {
+    render(<DataContextPanel ctx={ctx} />)
+    const t = screen.getByTestId('data-context')
+    expect(t).toHaveTextContent('50% of races had a safety car')
+    expect(t).toHaveTextContent('track 17.3 °C')
+    expect(t).toHaveTextContent('associations, not tyre physics')
+  })
+  it('shows the reason when weather is unavailable and renders nothing without context', () => {
+    const { rerender } = render(<DataContextPanel ctx={{ ...ctx, weather: { available: false, reason: 'no weather rows' } }} />)
+    expect(screen.getByTestId('data-context')).toHaveTextContent('no weather rows')
+    rerender(<DataContextPanel ctx={null} />)
+    expect(screen.queryByTestId('data-context')).toBeNull()
   })
 })

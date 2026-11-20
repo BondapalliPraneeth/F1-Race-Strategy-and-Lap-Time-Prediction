@@ -107,3 +107,104 @@ def degradation(session: Session, race_id: int, driver_id: str) -> dict[str, Any
             "pooled_degradation_se": pooled_se, "stints": stints,
             "notes": ["Compound is not provided by the ingested source; stints are labelled by number only."
                       if all(s["compound"] is None for s in stints) else "Compounds from tyre source."]}
+
+
+# ------------------------------------------------------------------ tyre / weather / safety-car statistics (real source data)
+DRY_COMPOUNDS = ("SOFT", "MEDIUM", "HARD")
+MIN_LAPS_PER_COMPOUND = 30
+MIN_STINTS_FOR_CIRCUIT_SCOPE = 8
+
+
+def _wet_race_ids(session: Session) -> set[int]:
+    """Races with measured rain, or wet/intermediate tyres, on more than 10 % of laps (same rule as training)."""
+    from sqlalchemy import case, func
+
+    from app.models import Weather
+
+    wx = session.execute(select(Weather.race_id, func.avg(case((Weather.rainfall.is_(True), 1.0), else_=0.0))).group_by(Weather.race_id)).all()
+    wet = {int(r) for r, share in wx if share is not None and share > F.WET_SHARE}
+    tyre = session.execute(select(Lap.race_id, func.avg(case((Lap.compound.in_(["INTERMEDIATE", "WET"]), 1.0), else_=0.0)))
+                           .where(Lap.compound.is_not(None)).group_by(Lap.race_id)).all()
+    return wet | {int(r) for r, share in tyre if share is not None and share > F.WET_SHARE}
+
+
+def compound_profiles(session: Session, circuit_id: str, total_laps: int, model_learns_compound: bool) -> dict[str, Any]:
+    """Compounds and stint limits measured from real dry-race stints.
+
+    Returns ``{"source": "data"|"assumption", "profiles": {...}, "evidence": {...}}``. When the model was trained with the
+    compound feature, pace offsets and degradation come from the model itself (profile offset 0 / multiplier 1); the data
+    only sets which compounds exist and how long a stint on each has realistically run (90th percentile of observed
+    stint lengths at this circuit, or across all circuits when the circuit has too few stints).
+    """
+    from app.models import Stint
+
+    q = (select(Stint.race_id, Stint.compound, Stint.start_lap, Stint.end_lap, Race.circuit_id)
+         .join(Race, Race.id == Stint.race_id).where(Stint.compound.is_not(None)))
+    df = pd.DataFrame(session.execute(q).all(), columns=["race_id", "compound", "start", "end", "circuit_id"])
+    if df.empty or not model_learns_compound:
+        return {"source": "assumption", "profiles": None, "evidence": {"reason": "no tyre data in database" if df.empty
+                                                                         else "model was trained without the compound feature"}}
+    df = df[~df["race_id"].isin(_wet_race_ids(session)) & df["compound"].isin(DRY_COMPOUNDS)]
+    df["length"] = df["end"] - df["start"] + 1
+    profiles: dict[str, dict[str, Any]] = {}
+    evidence: dict[str, Any] = {}
+    for comp in DRY_COMPOUNDS:
+        here, anywhere = df[(df["compound"] == comp) & (df["circuit_id"] == circuit_id)], df[df["compound"] == comp]
+        scope, d = ("circuit", here) if len(here) >= MIN_STINTS_FOR_CIRCUIT_SCOPE else ("all_circuits", anywhere)
+        if len(d) < MIN_STINTS_FOR_CIRCUIT_SCOPE:
+            continue
+        p90 = float(np.percentile(d["length"], 90))
+        profiles[comp] = {"offset_ms": 0.0, "degradation_multiplier": 1.0, "max_stint_laps": int(max(10, min(70, round(p90), total_laps)))}
+        evidence[comp] = {"scope": scope, "n_stints": int(len(d)), "median_stint_laps": float(d["length"].median()), "p90_stint_laps": p90,
+                          "longest_stint_laps": int(d["length"].max())}
+    if len(profiles) < 2:
+        return {"source": "assumption", "profiles": None, "evidence": {"reason": "fewer than two dry compounds with enough stints"}}
+    return {"source": "data", "profiles": profiles, "evidence": evidence}
+
+
+def sc_statistics(session: Session, circuit_id: str) -> dict[str, Any]:
+    """Safety-car / VSC frequency from race-control labels (circuit scope if >= 4 labelled races there, else all circuits)."""
+    q = (select(Lap.race_id, Lap.lap_number, Lap.sc_state, Race.circuit_id).join(Race, Race.id == Lap.race_id)
+         .where(Lap.sc_state.is_not(None)))
+    df = pd.DataFrame(session.execute(q).all(), columns=["race_id", "lap", "sc", "circuit_id"])
+    if df.empty:
+        return {"available": False, "reason": "no race-control safety-car labels in the database"}
+    per = df.groupby(["race_id", "lap"])["sc"].agg(lambda s: 1 if (s == 1).any() else (2 if (s == 2).any() else 0)).reset_index()
+    per = per.merge(df.drop_duplicates("race_id")[["race_id", "circuit_id"]], on="race_id")
+    scope = "circuit" if per[per.circuit_id == circuit_id]["race_id"].nunique() >= 4 else "all_circuits"
+    d = per[per.circuit_id == circuit_id] if scope == "circuit" else per
+    n_races = int(d["race_id"].nunique())
+
+    def periods(state: int) -> list[int]:
+        out: list[int] = []
+        for _, g in d.groupby("race_id"):
+            laps = sorted(g.loc[g["sc"] == state, "lap"].tolist())
+            run = 0
+            for i, lap in enumerate(laps):
+                run = run + 1 if i and lap == laps[i - 1] + 1 else 1
+                if i + 1 == len(laps) or laps[i + 1] != lap + 1:
+                    out.append(run)
+        return out
+
+    sc_p, vsc_p = periods(1), periods(2)
+    sc_races = int(d.loc[d["sc"] == 1, "race_id"].nunique())
+    vsc_races = int(d.loc[d["sc"] == 2, "race_id"].nunique())
+    return {"available": True, "scope": scope, "n_races": n_races,
+            "sc_probability": sc_races / n_races, "vsc_probability": vsc_races / n_races,
+            "sc_mean_laps_per_period": float(np.mean(sc_p)) if sc_p else None, "vsc_mean_laps_per_period": float(np.mean(vsc_p)) if vsc_p else None,
+            "source": "race-control messages (Mendeley FastF1 dataset)"}
+
+
+def weather_summary(session: Session, race_id: int) -> dict[str, Any]:
+    from app.models import Weather
+
+    rows = session.execute(select(Weather.air_temp_c, Weather.track_temp_c, Weather.humidity_pct, Weather.rainfall, Weather.source)
+                           .where(Weather.race_id == race_id)).all()
+    if not rows:
+        return {"available": False, "reason": "no weather rows for this race (source does not cover it)"}
+    df = pd.DataFrame(rows, columns=["air", "track", "hum", "rain", "source"])
+    return {"available": True, "source": str(df["source"].iloc[0]), "n_laps": int(len(df)),
+            "air_temp_c": {"min": float(df["air"].min()), "mean": float(df["air"].mean()), "max": float(df["air"].max())},
+            "track_temp_c": {"min": float(df["track"].min()), "mean": float(df["track"].mean()), "max": float(df["track"].max())},
+            "humidity_pct_mean": None if df["hum"].isna().all() else float(df["hum"].mean()),
+            "rain_lap_share": float(df["rain"].fillna(False).astype(bool).mean())}

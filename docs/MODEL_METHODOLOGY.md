@@ -27,7 +27,7 @@ Races are ordered by date; the **last N races (default 4) are the test set** and
 calibration. No random lap-level split (that would leak a race's pace into its own test laps).
 
 ## Abnormal-pace races (wet / red-flag proxy)
-Because there is no weather data, a race is flagged when its median clean lap exceeds **1.06 ×** the circuit's
+A race is flagged (in addition to rainfall / wet tyres on > 10 % of laps where weather data exists) when its median clean lap exceeds **1.06 ×** the circuit's
 reference pace (median of per-race medians; needs ≥ 2 races at the circuit). Flagged races are excluded from
 training/calibration and reported as a separate stratum. Circuits with fewer than 2 races in the training data cannot be classified. On the current data the rule excludes 4 training races and flags the wet São Paulo 2024 test race; it is a coarse proxy, not a weather model.
 

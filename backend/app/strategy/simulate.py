@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 
 from app.strategy.config import SafetyCarScenario, Strategy, StrategyConfig, WeatherWindow
-from app.strategy.engine import adjusted_lap_times
+from app.strategy.engine import PaceInput, adjusted_lap_times, pace_for
 
 MAX_SIMS = 20_000
 
@@ -46,17 +46,16 @@ def make_draws(n_sims: int, n_laps: int, sc: SafetyCarScenario, lap_sigma: float
                  rng.standard_normal((n_sims, 5)), active, start, np.full(n_sims, sc.duration_laps))
 
 
-def simulate_strategy(pace: np.ndarray, strategy: Strategy, cfg: StrategyConfig, sc: SafetyCarScenario,
+def simulate_strategy(pace: PaceInput, strategy: Strategy, cfg: StrategyConfig, sc: SafetyCarScenario,
                       weather: list[WeatherWindow], d: Draws) -> np.ndarray:
     """Returns total race time (ms) per simulation, shape (S,)."""
     n = cfg.total_laps
-    pace = pace[:n, :n]
     base = np.zeros(n)
     stint_idx = np.zeros(n, dtype=int)
     lap = 0
     for j, st in enumerate(strategy.stints):
         p = cfg.compounds[st.compound]
-        adj = adjusted_lap_times(pace, p.offset_ms, p.degradation_multiplier)
+        adj = adjusted_lap_times(pace_for(pace, st.compound)[:n, :n], p.offset_ms, p.degradation_multiplier)
         for age in range(st.laps):
             base[lap] = adj[lap, age]
             stint_idx[lap] = min(j, 4)
@@ -87,7 +86,7 @@ def summarise(totals: np.ndarray) -> dict[str, float]:
             "p5_ms": float(p[0]), "p25_ms": float(p[1]), "p75_ms": float(p[3]), "p95_ms": float(p[4])}
 
 
-def run_comparison(pace: np.ndarray, strategies: list[Strategy], cfg: StrategyConfig, sc: SafetyCarScenario,
+def run_comparison(pace: PaceInput, strategies: list[Strategy], cfg: StrategyConfig, sc: SafetyCarScenario,
                    weather: list[WeatherWindow], n_sims: int, seed: int, lap_sigma_ms: float, stint_sigma_ms: float = 150.0) -> dict[str, Any]:
     if not 1 <= n_sims <= MAX_SIMS:
         raise ValueError(f"n_sims must be within 1..{MAX_SIMS}")

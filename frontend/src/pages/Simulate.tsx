@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { DataContextPanel, useStrategyContext } from '../components/DataContext'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api, type ApiError, type SafetyCar, type SimResult, type Stint } from '../api'
 import { initialForm, ParamsForm, toParams, validate } from '../components/ParamsForm'
@@ -27,6 +28,9 @@ export function parsePlan(text: string, compounds: string[], totalLaps: number |
 export default function Simulate() {
   const { sel } = useSelection()
   const [form, setForm] = useState(initialForm)
+  const ctx = useStrategyContext(sel.raceId)
+  const dataDerived = ctx?.compound_profile_source === 'data'
+  useEffect(() => { if (ctx?.compound_profile_source === 'data') setForm((f) => ({ ...f, compounds: ctx.compound_profiles })) }, [ctx])
   const [plans, setPlans] = useState<string[]>(['MEDIUM:25, HARD:30', 'SOFT:15, HARD:20, MEDIUM:20'])
   const [sc, setSc] = useState<SafetyCar>({ mode: 'random', probability: 0.3, duration_laps: 4, vsc: false, start_lap: 20 })
   const [rain, setRain] = useState({ on: false, start: '20', end: '30', slow: '6' })
@@ -119,7 +123,8 @@ export default function Simulate() {
             <small className={nErr ? 'err' : ''}>{nErr ?? 'max 20 000'}</small></label>
           <label className="field"><span>Random seed</span><input aria-label="Seed" value={seed} onChange={(e) => setSeed(e.target.value)} /></label>
         </div>
-        <ParamsForm value={form} onChange={setForm} />
+        <DataContextPanel ctx={ctx} />
+        <ParamsForm value={form} onChange={setForm} dataDerived={dataDerived} />
         <div className="actions">
           <button className="primary" disabled={!ready || busy} onClick={() => void run()}>{busy ? 'Simulating…' : 'Run simulation'}</button>
           {!sel.driver && <span className="note">Select a race and driver first.</span>}

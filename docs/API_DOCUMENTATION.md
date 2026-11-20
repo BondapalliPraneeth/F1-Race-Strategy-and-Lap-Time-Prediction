@@ -24,7 +24,8 @@ Every response that carries numbers says what they are via `kind`: `actual` (fro
 | GET | `/races/{id}/laps?driver_id=` | paginated actual laps | `kind: actual` |
 | GET | `/races/{id}/compare?drivers=a&drivers=b` | up to 6 drivers' lap series | |
 | GET | `/races/{id}/pit-stops` | recorded stops | |
-| GET | `/races/{id}/weather` | `available:false` + reason (source has none) | no fabricated data |
+| GET | `/races/{id}/weather` | per-lap air/track temperature, humidity, rain (2022–2025); otherwise `available:false` + reason | no fabricated data |
+| GET | `/races/{id}/strategy-context` | data-derived compound profiles (p90 real stint lengths), safety-car statistics, weather summary, `model_uses_compound` | feeds optimizer/simulator defaults in the UI |
 | GET | `/races/{id}/degradation` | regression of lap time on tyre age | actual-data analysis |
 | GET | `/models`, `/models/active` | registry: metrics, split, seed, fingerprint | |
 | POST | `/predict/laptime` | single lap p50 + 80 % interval | 503 without model |

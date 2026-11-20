@@ -6,7 +6,7 @@ laps and tyre sequence minimise predicted race time?"*
 ## Inputs
 
 1. **Pace table** `pace[lap, age]` – the model's p50 lap time for every (lap number, tyre age) pair, built once per
-   (race, driver, model) and cached. The model never sees compounds (the source has none).
+   (race, driver, model) and cached. When the model was trained with compound data (Mendeley dataset) one table per compound is built; otherwise one shared table.
 2. **`StrategyConfig`** (Pydantic, validated) – race length, pit loss, compound profiles, stop limits, minimum stint,
    optional penalties. See `config.py` for bounds and descriptions.
 
@@ -42,7 +42,7 @@ Each recommendation carries a plain-language explanation computed from the actua
 | Two different dry compounds required | **Real regulation**, editable |
 | Pit loss | **Data-derived** (median recorded stop cost for the circuit) or user override |
 | Lap-time vs tyre-age shape | **Learned** from historical laps (age = laps since last stop) |
-| Compound offsets, degradation multipliers, max stint | **Assumption** (no compound data) |
+| Max stint per compound | **Data-derived** (p90 of real stints); pace offsets 0 / multiplier 1 when the model learned compound, else editable **assumptions** |
 | Stop-count cap, minimum stint, traffic/in/out-lap penalties, tyre-set limits | **Assumption** |
 
 Every response lists the assumptions used so the UI can label them. The output is a *model-based recommendation*, not

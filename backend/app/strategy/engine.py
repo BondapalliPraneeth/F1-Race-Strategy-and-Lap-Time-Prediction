@@ -43,8 +43,19 @@ def stint_cost_table(adj: np.ndarray) -> np.ndarray:
     return cost
 
 
-def _tables(pace: np.ndarray, cfg: StrategyConfig) -> dict[str, np.ndarray]:
-    return {c: stint_cost_table(adjusted_lap_times(pace, p.offset_ms, p.degradation_multiplier)) for c, p in cfg.compounds.items()}
+PaceInput = np.ndarray | dict[str, np.ndarray]
+
+
+def pace_for(pace: PaceInput, compound: str) -> np.ndarray:
+    """A single pace table is shared by all compounds (profiles then supply the differences); a dict holds one
+    model-predicted table per compound (used when the model learned the compound effect from real tyre data)."""
+    return pace[compound] if isinstance(pace, dict) else pace
+
+
+def _tables(pace: PaceInput, cfg: StrategyConfig) -> dict[str, np.ndarray]:
+    n = cfg.total_laps
+    return {c: stint_cost_table(adjusted_lap_times(pace_for(pace, c)[:n, :n], p.offset_ms, p.degradation_multiplier))
+            for c, p in cfg.compounds.items()}
 
 
 def _extra(cfg: StrategyConfig, j: int, k: int) -> float:
@@ -151,10 +162,9 @@ def pit_windows(strategy: Strategy, costs: dict[str, np.ndarray], cfg: StrategyC
     return windows
 
 
-def optimise(pace: np.ndarray, cfg: StrategyConfig) -> list[Ranked]:
-    if pace.shape[0] < cfg.total_laps:
+def optimise(pace: PaceInput, cfg: StrategyConfig) -> list[Ranked]:
+    if any(t.shape[0] < cfg.total_laps for t in (pace.values() if isinstance(pace, dict) else [pace])):
         raise ValueError("pace table shorter than race distance")
-    pace = pace[: cfg.total_laps, : cfg.total_laps]
     costs = _tables(pace, cfg)
     names = list(cfg.compounds)
     out: list[Ranked] = []
@@ -177,7 +187,7 @@ def optimise(pace: np.ndarray, cfg: StrategyConfig) -> list[Ranked]:
     return out
 
 
-def explain(ranked: list[Ranked], cfg: StrategyConfig) -> list[str]:
+def explain(ranked: list[Ranked], cfg: StrategyConfig, note: str = "Compound pace and degradation multipliers are configurable assumptions, not learned from data.") -> list[str]:
     """Plain-language reasons, computed from the actual numbers (no canned text about results)."""
     best = ranked[0]
     lines = [f"Best strategy {best.strategy.label} has the lowest predicted race time of {len(ranked)} ranked candidates "
@@ -195,5 +205,5 @@ def explain(ranked: list[Ranked], cfg: StrategyConfig) -> list[str]:
     for w in best.pit_windows:
         lines.append(f"Stop {w['stop']}: optimum lap {w['optimal_lap']}; within {cfg.window_tolerance_ms / 1000:.1f} s of optimum "
                      f"for laps {w['earliest']}–{w['latest']}.")
-    lines.append("Compound pace and degradation multipliers are configurable assumptions, not learned from data.")
+    lines.append(note)
     return lines

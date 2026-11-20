@@ -3,6 +3,7 @@ import time
 from typing import Annotated, Any
 
 import numpy as np
+from pandas import isna as pd_isna
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import ValidationError
 from sqlalchemy import func, select, text
@@ -67,7 +68,8 @@ def race_detail(race_id: int, session: Db) -> dict[str, Any]:
     has_compound = bool(session.scalar(select(func.count()).select_from(Lap).where(Lap.race_id == race_id, Lap.compound.is_not(None))))
     mv = session.scalar(select(ModelVersion).where(ModelVersion.is_active).order_by(ModelVersion.id.desc()))
     return {**_race(race), "data_availability": {"laps": True, "pit_stops": True, "weather": has_weather, "tyre_compound": has_compound},
-            "data_source": "Jolpica-F1 (Ergast-compatible API)", "model_split": services.split_label(mv, race_id) if mv else None,
+            "data_source": "Jolpica-F1 (Ergast-compatible API)" + (" + Mendeley FastF1 dataset (tyre compound, weather, safety-car labels; CC BY 4.0)" if has_compound else ""),
+            "weather": analysis.weather_summary(session, race_id), "model_split": services.split_label(mv, race_id) if mv else None,
             "drivers": [{"driver_id": r.driver_id, "code": r.driver.code, "name": f"{r.driver.given_name} {r.driver.family_name}",
                          "constructor_id": r.constructor_id, "grid": r.grid, "position": r.position, "status": r.status, "laps": n} for r, n in drivers]}
 
@@ -135,13 +137,16 @@ def predict(req: PredictRequest, session: Db) -> dict[str, Any]:
     race = services.get_race(session, req.race_id)
     res = services.driver_context(session, race, req.driver_id)
     mv = services.active_model(session)
-    df = services.feature_frame(race, res, [req.lap_number], [req.tyre_age], race.total_laps or 60)
+    df = services.feature_frame(race, res, [req.lap_number], [req.tyre_age], race.total_laps or 60,
+                                req.compound.upper() if req.compound else None)
     p = T.predict_ms(services.bundle_for(mv), df).iloc[0]
     actual = session.scalar(select(Lap).where(Lap.race_id == race.id, Lap.driver_id == req.driver_id, Lap.lap_number == req.lap_number))
     comparable = bool(actual and actual.lap_time_ms and actual.tyre_age == req.tyre_age and not (actual.is_in_lap or actual.is_out_lap or actual.is_neutralised))
     return {"kind": "predicted", "predicted_ms": float(p["p50"]), "interval_80_ms": [float(p["p10"]), float(p["p90"])],
             "model_version": mv.id, "split": services.split_label(mv, race.id),
-            "compound_used_by_model": "compound" in mv.feature_spec["categorical"],
+            "compound_used_by_model": services.model_uses_compound(mv),
+            "compound_note": None if services.model_uses_compound(mv) or not req.compound else
+            "the active model was trained without the compound feature; the compound you selected was ignored",
             "actual_ms": actual.lap_time_ms if comparable and actual else None,
             "error_ms": float(p["p50"] - actual.lap_time_ms) if comparable and actual and actual.lap_time_ms else None,
             "actual_note": None if comparable else "no comparable clean actual lap at this lap/tyre age",
@@ -158,7 +163,8 @@ def predict_vs_actual(race_id: int, driver_id: str, session: Db) -> dict[str, An
     c = F.clean_laps(d) if not d.empty else d
     if c.empty:
         return {"kind": "predicted", "available": False, "reason": "no clean laps for this driver", "points": []}
-    df = services.feature_frame(race, res, c["lap_number"].tolist(), c["tyre_age"].tolist(), race.total_laps or 60)
+    df = services.feature_frame(race, res, c["lap_number"].tolist(), c["tyre_age"].tolist(), race.total_laps or 60,
+                                [None if pd_isna(x) else str(x) for x in c["compound"]])
     p = T.predict_ms(services.bundle_for(mv), df)
     err = p["p50"].to_numpy() - c["lap_time_ms"].to_numpy()
     return {"kind": "predicted_vs_actual", "available": True, "model_version": mv.id, "split": services.split_label(mv, race_id),
@@ -193,8 +199,22 @@ def build_config(session: Session, race: Race, p: StrategyParams) -> tuple[Strat
     data.setdefault("pit_loss_ms", est["pit_loss_ms"])
     data.setdefault("pit_loss_std_ms", est["std_ms"])
     data["pit_loss_ms"] = max(5_000, min(60_000, data["pit_loss_ms"]))
+    mv = services.active_model(session)
+    prof = analysis.compound_profiles(session, race.circuit_id, data["total_laps"], services.model_uses_compound(mv))
+    if p.compounds is None and prof["source"] == "data":
+        data["compounds"] = prof["profiles"]
+    # The UI echoes the data-derived profiles back; only a *changed* profile counts as a user override.
+    user_edited = p.compounds is not None and not (
+        prof["source"] == "data" and {k: v.model_dump() for k, v in p.compounds.items()} == prof["profiles"])
+    meta: dict[str, Any] = {"pit_loss_estimate": est, "pit_loss_overridden": p.pit_loss_ms is not None,
+                            "compound_profile_source": "user" if user_edited else prof["source"],
+                            "compound_evidence": prof["evidence"]}
+    wx = analysis.weather_summary(session, race.id)
+    if wx.get("available") and wx["rain_lap_share"] > F.WET_SHARE:
+        meta["warnings"] = [f"This race was run in the wet on {wx['rain_lap_share']:.0%} of laps; the model and compound limits describe "
+                            "dry running, so the dry-tyre strategy below is not representative."]
     try:
-        return StrategyConfig(**data), {"pit_loss_estimate": est, "pit_loss_overridden": p.pit_loss_ms is not None}
+        return StrategyConfig(**data), meta
     except ValidationError as e:
         raise HTTPException(422, e.errors(include_url=False, include_context=False)) from e
 
@@ -204,7 +224,7 @@ def optimize(req: OptimizeRequest, session: Db) -> dict[str, Any]:
     race = services.get_race(session, req.race_id)
     cfg, meta = build_config(session, race, req.params)
     t0 = time.perf_counter()
-    table, sigma, mv = services.pace_table(session, race, req.driver_id, cfg.total_laps)
+    table, sigma, mv = services.pace_tables(session, race, req.driver_id, cfg.total_laps, list(cfg.compounds))
     try:
         ranked = E.optimise(table, cfg)
     except E.InfeasibleError as e:
@@ -213,10 +233,23 @@ def optimize(req: OptimizeRequest, session: Db) -> dict[str, Any]:
     actual = _actual_strategy(session, race, req.driver_id, cfg)
     return {"kind": "predicted", "model_version": mv.id, "split": services.split_label(mv, race.id), "config": cfg.model_dump(), **meta,
             "lap_sigma_ms": sigma, "compute_seconds": round(elapsed, 3),
-            "recommended": _ranked(ranked[0]), "alternatives": [_ranked(r) for r in ranked[1:]], "explanation": E.explain(ranked, cfg),
+            "recommended": _ranked(ranked[0]), "alternatives": [_ranked(r) for r in ranked[1:]], "explanation": E.explain(ranked, cfg, _compound_note(meta, mv)),
             "actual_strategy": actual,
-            "assumption_notes": ["Compound pace/degradation are configurable assumptions (source has no tyre data).",
-                                 "Only the 'at least two compounds' rule reflects an FIA dry-race regulation; all other limits are simplified."]}
+            "assumption_notes": _assumption_notes(meta, mv)}
+
+
+def _compound_note(meta: dict[str, Any], mv: ModelVersion) -> str:
+    if meta["compound_profile_source"] == "data" and services.model_uses_compound(mv):
+        return ("Compound pace and tyre wear come from the model trained on real compound/tyre-life data; "
+                "maximum stint lengths are the 90th percentile of stints actually run.")
+    return "Compound pace and degradation multipliers are configurable assumptions, not learned from data."
+
+
+def _assumption_notes(meta: dict[str, Any], mv: ModelVersion) -> list[str]:
+    notes = [_compound_note(meta, mv),
+             "Only the 'at least two compounds' rule reflects an FIA dry-race regulation; stop limits, minimum stint and traffic are simplified."]
+    notes += meta.get("warnings", [])
+    return notes
 
 
 def _ranked(r: E.Ranked) -> dict[str, Any]:
@@ -236,7 +269,7 @@ def _actual_strategy(session: Session, race: Race, driver_id: str, cfg: Strategy
 def simulate(req: SimulateRequest, session: Db) -> dict[str, Any]:
     race = services.get_race(session, req.race_id)
     cfg, meta = build_config(session, race, req.params)
-    table, sigma, mv = services.pace_table(session, race, req.driver_id, cfg.total_laps)
+    table, sigma, mv = services.pace_tables(session, race, req.driver_id, cfg.total_laps, list(cfg.compounds))
     strategies = [Strategy(stints=s) for s in req.strategies]
     issues = {st.label: E.feasibility_issues(st, cfg) for st in strategies}
     bad = {k: v for k, v in issues.items() if v}
@@ -247,9 +280,20 @@ def simulate(req: SimulateRequest, session: Db) -> dict[str, Any]:
         res = S.run_comparison(table, strategies, cfg, req.safety_car, req.weather, req.n_sims, req.seed, sigma)
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-    costs = E._tables(table[: cfg.total_laps, : cfg.total_laps], cfg)
+    costs = E._tables(table, cfg)
     for entry, st in zip(res["strategies"], strategies, strict=True):
         entry["deterministic_ms"] = E.evaluate(st, costs, cfg)
     return {"kind": "simulated", "model_version": mv.id, "lap_sigma_ms": sigma, "compute_seconds": round(time.perf_counter() - t0, 3),
             "scenario": {"safety_car": req.safety_car.model_dump(), "weather": [w.model_dump() for w in req.weather], "hypothetical": True},
             **meta, **res}
+
+
+@router.get("/races/{race_id}/strategy-context")
+def strategy_context(race_id: int, session: Db) -> dict[str, Any]:
+    """Real tyre / safety-car / weather evidence the optimiser and simulator are defaulted from (for the UI)."""
+    race = services.get_race(session, race_id)
+    mv = services.active_model(session)
+    prof = analysis.compound_profiles(session, race.circuit_id, race.total_laps or 60, services.model_uses_compound(mv))
+    return {"compound_profile_source": prof["source"], "compound_profiles": prof["profiles"], "compound_evidence": prof["evidence"],
+            "safety_car": analysis.sc_statistics(session, race.circuit_id), "weather": analysis.weather_summary(session, race_id),
+            "model_uses_compound": services.model_uses_compound(mv)}

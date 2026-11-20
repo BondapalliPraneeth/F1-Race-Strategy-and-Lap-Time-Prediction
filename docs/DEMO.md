@@ -22,16 +22,16 @@ cd ../frontend && npm ci && npm run dev
    (badge *ACTUAL*, source: laps table), pit stops list.
 2. **Lap-Time Prediction** – lap 20, tyre age 5 → p50 and 80 % interval (*PREDICTED*, "held-out test race" notice).
    The lower chart shows predicted vs actual for every clean lap (MAE 0.665 s, 45 laps for this driver).
-3. **Tyre Degradation** – regression of lap time on tyre age from real laps; note the tyre-age caveat and the missing compound data.
+3. **Tyre Degradation** – regression of lap time on true tyre life from real laps, by real compound; note the confounding caveat.
 4. **Strategy Optimizer** – leave pit loss blank (data-derived: 24.2 s, median of 55 recorded stops), click *Find optimal
    strategy*: recommended 1-stop M32→S18, pit window laps 30–32, explanation, 7 alternatives, and the actual strategy
-   (stops on laps 9, 31) for comparison. Edit the compound profile (assumption) and re-run to see sensitivity.
+   (stops on laps 9, 31) for comparison. Real stint limits come from the data; edit the compound profile and re-run to see sensitivity.
 5. **What-If Simulation** – enter `MEDIUM:25, HARD:25` vs `SOFT:15, HARD:35`, 2,000 simulations, random safety car,
    optional weather window: mean/p5/p95, win probability, histogram (*SIMULATED*). Same seed ⇒ same result.
-6. **Model & Data** – active model version, split, metrics, baselines, data availability (no compounds/weather).
+6. **Model & Data** – active model version, split, metrics, baselines, data availability (compound/weather coverage per race).
 
 Error and empty states to try: stop the API (banner), run before training (503 message), simulation laps that do not sum
-to the race distance (inline validation), the weather panel (explicit "not available from source").
+to the race distance (inline validation), the weather panel (explicit empty state for races the dataset does not cover).
 
 ## Automated version
 

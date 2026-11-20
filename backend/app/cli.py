@@ -1,6 +1,6 @@
 """Command line entry point: ``python -m app.cli <command>``.
 
-Commands: migrate | ingest --season Y [--rounds 1 2 ...] [--force] | status
+Commands: migrate | ingest --season Y [--rounds 1 2 ...] [--force] | fetch-tyres [--dest DIR] | ingest-tyres [--dir DIR] | train | status
 """
 import argparse
 import sys
@@ -33,6 +33,10 @@ def main(argv: list[str] | None = None) -> int:
     ing.add_argument("--season", type=int, required=True)
     ing.add_argument("--rounds", type=int, nargs="*")
     ing.add_argument("--force", action="store_true")
+    ft = sub.add_parser("fetch-tyres", help="download the tyre/weather/safety-car dataset (CC BY 4.0)")
+    ft.add_argument("--dest", default="data/tyre_cache")
+    it = sub.add_parser("ingest-tyres", help="join compound/tyre life/weather/SC labels onto ingested races")
+    it.add_argument("--dir", default="data/tyre_cache")
     tr = sub.add_parser("train")
     tr.add_argument("--test-races", type=int, default=4)
     sub.add_parser("status")
@@ -48,6 +52,25 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{r.season} R{r.round:>2}  {r.status:<8} laps={r.laps_loaded} rejected={r.rows_rejected} {r.detail or ''}")
         if any(r.status == "failed" for r in runs):
             return 1
+    elif args.cmd == "fetch-tyres":
+        from pathlib import Path
+
+        from app.ingestion.tyres import fetch_dataset
+
+        files = fetch_dataset(Path(args.dest))
+        print(f"{len(files)} race files in {args.dest}")
+    elif args.cmd == "ingest-tyres":
+        from pathlib import Path
+
+        from app.ingestion.tyres import ingest_directory
+
+        with session_scope() as session:
+            rep = ingest_directory(session, Path(args.dir))
+        print(f"races enriched: {rep.races_matched}, laps updated: {rep.laps_updated}")
+        for u in rep.unmatched_events:
+            print("  unmatched:", u)
+        for k in rep.skipped_files:
+            print("  skipped:", k)
     elif args.cmd == "train":
         from app.ml.train import train_and_register
 

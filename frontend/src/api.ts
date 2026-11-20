@@ -118,7 +118,18 @@ export interface ModelInfo {
   metrics: Record<string, any>
 }
 
+export interface StrategyContext {
+  compound_profile_source: 'data' | 'assumption'; model_uses_compound: boolean
+  compound_profiles: Record<string, CompoundProfile>
+  compound_evidence: Record<string, { scope: string; n_stints: number; median_stint_laps: number; p90_stint_laps: number; longest_stint_laps: number }>
+  safety_car: { available: boolean; reason?: string; scope?: string; n_races?: number; sc_probability?: number; vsc_probability?: number
+    sc_mean_laps_per_period?: number | null; vsc_mean_laps_per_period?: number | null; source?: string }
+  weather: { available: boolean; reason?: string; source?: string; n_laps?: number; rain_lap_share?: number; humidity_pct_mean?: number | null
+    air_temp_c?: { min: number; mean: number; max: number }; track_temp_c?: { min: number; mean: number; max: number } }
+}
+
 export const api = {
+  strategyContext: (id: number) => request<StrategyContext>(`/api/races/${id}/strategy-context`),
   health: () => request<{ status: string; races_with_laps: number; active_model: number | null }>('/api/health'),
   seasons: () => request<{ season: number; races: number }[]>('/api/seasons'),
   races: (season?: number) => request<{ items: Race[]; total: number }>(`/api/races${qs({ season, page_size: 100 })}`),

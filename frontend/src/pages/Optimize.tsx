@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, type ApiError, type OptimizeResult } from '../api'
+import { DataContextPanel, useStrategyContext } from '../components/DataContext'
 import { initialForm, ParamsForm, toParams, validate } from '../components/ParamsForm'
 import { RaceSelector, useSelection } from '../components/RaceSelector'
 import { StintBar } from '../components/StintBar'
@@ -9,6 +10,9 @@ import { fmtRace, fmtSec } from '../lib'
 export default function Optimize() {
   const { sel } = useSelection()
   const [form, setForm] = useState(initialForm)
+  const ctx = useStrategyContext(sel.raceId)
+  const dataDerived = ctx?.compound_profile_source === 'data'
+  useEffect(() => { if (ctx?.compound_profile_source === 'data') setForm((f) => ({ ...f, compounds: ctx.compound_profiles })) }, [ctx])
   const [res, setRes] = useState<OptimizeResult | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [busy, setBusy] = useState(false)
@@ -27,8 +31,9 @@ export default function Optimize() {
       <h1>Pit-Stop Strategy Optimizer</h1>
       <p className="lede">Exact dynamic programming over all feasible stop counts, compound orders and pit laps, using the trained model’s predicted pace.</p>
       <RaceSelector />
-      <Panel title="Strategy parameters" kind="assumption" source="pit loss estimated from recorded stops unless overridden; all other values are user-editable">
-        <ParamsForm value={form} onChange={setForm} />
+      <DataContextPanel ctx={ctx} />
+      <Panel title="Strategy parameters" kind={dataDerived ? 'derived' : 'assumption'} source="pit loss and stint limits estimated from recorded data unless overridden; other values are user-editable">
+        <ParamsForm value={form} onChange={setForm} dataDerived={dataDerived} />
         <div className="actions">
           <button className="primary" disabled={!ready || busy} onClick={() => void run()}>{busy ? 'Optimizing…' : 'Find optimal strategy'}</button>
           {!sel.driver && <span className="note">Select a race and driver first.</span>}

@@ -93,6 +93,10 @@ class Lap(Base):
     is_out_lap: Mapped[bool] = mapped_column(Boolean, default=False)
     is_neutralised: Mapped[bool] = mapped_column(Boolean, default=False)  # heuristic SC/VSC/incident flag
     compound: Mapped[str | None] = mapped_column(String(16))  # NULL unless a tyre source provided it
+    # Filled by the tyre/weather source (Mendeley FastF1 dataset); NULL when the lap is not covered by it:
+    tyre_life: Mapped[int | None] = mapped_column(Integer)  # true tyre age in laps (includes laps on a used set)
+    fresh_tyre: Mapped[bool | None] = mapped_column(Boolean)
+    sc_state: Mapped[int | None] = mapped_column(Integer)  # race-control label: 0 green, 1 safety car, 2 virtual SC
 
 
 class PitStop(Base):
@@ -120,7 +124,7 @@ class Stint(Base):
 
 
 class Weather(Base):
-    """Populated only when a weather-capable source is reachable; otherwise empty (never fabricated)."""
+    """Populated only from a weather-capable source (one row per race lap); empty otherwise, never fabricated."""
 
     __tablename__ = "weather"
     id: Mapped[int] = mapped_column(PK, primary_key=True, autoincrement=True)
@@ -129,6 +133,8 @@ class Weather(Base):
     air_temp_c: Mapped[float | None] = mapped_column(Float)
     track_temp_c: Mapped[float | None] = mapped_column(Float)
     rainfall: Mapped[bool | None] = mapped_column(Boolean)
+    humidity_pct: Mapped[float | None] = mapped_column(Float)
+    wind_speed_ms: Mapped[float | None] = mapped_column(Float)
     source: Mapped[str] = mapped_column(String(32))
 
 

@@ -50,22 +50,30 @@ def driver_context(session: Session, race: Race, driver_id: str) -> Result:
     return res
 
 
-def feature_frame(race: Race, res: Result, laps: list[int], ages: list[int], total_laps: int) -> pd.DataFrame:
+def feature_frame(race: Race, res: Result, laps: list[int], ages: list[int], total_laps: int, compound: str | list[str | None] | None = None) -> pd.DataFrame:
     return pd.DataFrame({
         "circuit_id": race.circuit_id, "season": float(race.season), "constructor_id": res.constructor_id, "driver_id": res.driver_id,
         "grid": float(res.grid if res.grid else 20), "lap_number": [float(x) for x in laps], "tyre_age": [float(x) for x in ages],
-        "race_progress": [x / total_laps for x in laps], "compound": None,
+        "race_progress": [x / total_laps for x in laps], "compound": compound,
     })
 
 
-def pace_table(session: Session, race: Race, driver_id: str, total_laps: int) -> tuple[np.ndarray, float, ModelVersion]:
-    """Predicted p50 lap time for every (lap, tyre age) pair, plus a per-lap noise sigma from the p10-p90 band."""
+def model_uses_compound(mv: ModelVersion) -> bool:
+    return "compound" in mv.feature_spec.get("categorical", [])
+
+
+def pace_table(session: Session, race: Race, driver_id: str, total_laps: int, compound: str | None = None
+               ) -> tuple[np.ndarray, float, ModelVersion]:
+    """Predicted p50 lap time for every (lap, tyre age) pair, plus a per-lap noise sigma from the p10-p90 band.
+
+    ``compound`` is only passed to the model if it was trained with the compound feature (otherwise ignored)."""
     mv = active_model(session)
-    key = (mv.id, race.id, driver_id, total_laps)
+    compound = compound if model_uses_compound(mv) else None
+    key = (mv.id, race.id, driver_id, total_laps, compound)
     if key not in _pace:
         res = driver_context(session, race, driver_id)
         laps, ages = np.meshgrid(np.arange(1, total_laps + 1), np.arange(1, total_laps + 1), indexing="ij")
-        df = feature_frame(race, res, laps.ravel().tolist(), ages.ravel().tolist(), total_laps)
+        df = feature_frame(race, res, laps.ravel().tolist(), ages.ravel().tolist(), total_laps, compound)
         pred = T.predict_ms(bundle_for(mv), df)
         table = pred["p50"].to_numpy().reshape(total_laps, total_laps)
         valid = (ages <= laps).ravel()
@@ -73,6 +81,20 @@ def pace_table(session: Session, race: Race, driver_id: str, total_laps: int) ->
         _pace[key] = (table, sigma)
     table, sigma = _pace[key]
     return table, sigma, mv
+
+
+def pace_tables(session: Session, race: Race, driver_id: str, total_laps: int, compounds: list[str]
+                ) -> tuple[np.ndarray | dict[str, np.ndarray], float, ModelVersion]:
+    """One table per compound when the model learned compounds from data; otherwise a single shared table."""
+    mv = active_model(session)
+    if not model_uses_compound(mv):
+        return pace_table(session, race, driver_id, total_laps)
+    tables, sigmas = {}, []
+    for c in compounds:
+        t, sg, _ = pace_table(session, race, driver_id, total_laps, c)
+        tables[c] = t
+        sigmas.append(sg)
+    return tables, float(np.mean(sigmas)), mv
 
 
 def split_label(mv: ModelVersion, race_id: int) -> str:
