@@ -98,7 +98,6 @@ def evaluate(b: Bundle, train: pd.DataFrame, test: pd.DataFrame) -> dict[str, An
     y = test["lap_time_ms"].to_numpy(dtype=float)
     pred = predict_ms(b, test)
     err = pred["p50"].to_numpy() - y
-    seen = test["circuit_id"].isin(b.baselines.keys())
     naive = baseline_for(b, test["circuit_id"])
     # Baseline 2: circuit median + linear tyre-age slope fitted on training data (no fuel/driver info).
     tr_delta = train["lap_time_ms"] - train["circuit_id"].map(b.baselines)

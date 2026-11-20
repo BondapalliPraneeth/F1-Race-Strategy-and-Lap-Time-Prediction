@@ -89,7 +89,7 @@ export default function Simulate() {
             <label className="field"><span>Strategy {i + 1}</span>
               <input aria-label={`Strategy ${i + 1}`} value={p} onChange={(e) => setPlans(plans.map((x, j) => (j === i ? e.target.value : x)))} />
               <small className={parsed[i].error ? 'err' : ''} role={parsed[i].error ? 'alert' : undefined}>{parsed[i].error ?? `Valid · ${parsed[i].stints!.length - 1} stop(s)`}</small></label>
-            {plans.length > 1 && <button type="button" onClick={() => setPlans(plans.filter((_, j) => j !== i))} aria-label={`Remove strategy ${i + 1}`}>Remove</button>}
+            {plans.length > 1 && <button type="button" onClick={() => setPlans(plans.filter((_, j) => j !== i))} aria-label={`Delete plan ${i + 1}`}>Remove</button>}
           </div>))}
         <div className="actions">
           {plans.length < 8 && <button type="button" onClick={() => setPlans([...plans, `MEDIUM:${Math.ceil((total ?? 50) / 2)}, HARD:${Math.floor((total ?? 50) / 2)}`])}>Add strategy</button>}

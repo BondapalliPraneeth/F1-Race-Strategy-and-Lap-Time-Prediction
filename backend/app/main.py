@@ -4,6 +4,7 @@ import uuid
 
 import structlog
 from fastapi import FastAPI, Request
+from threadpoolctl import threadpool_limits
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -18,6 +19,9 @@ log = get_logger("api")
 def create_app() -> FastAPI:
     s = get_settings()
     configure_logging(s.log_level, s.log_json)
+    # Inference requests are small and run concurrently in worker threads; letting each spawn a full OpenMP pool
+    # oversubscribes the CPU (measured: multi-second latency for ~0.1 s of work). Serving uses 1 native thread/request.
+    threadpool_limits(limits=1)
     app = FastAPI(title="F1 Race Strategy & Lap-Time Prediction", version="1.0.0")
     app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in s.cors_origins.split(",")], allow_methods=["*"], allow_headers=["*"])
 

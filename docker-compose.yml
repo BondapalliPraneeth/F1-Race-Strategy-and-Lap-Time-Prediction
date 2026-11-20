@@ -1,0 +1,44 @@
+# docker compose up --build            -> db + api + web (http://localhost:8080)
+# docker compose run --rm ingest       -> load real data from Jolpica-F1 (network required)
+# docker compose run --rm train        -> train + register a model
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: f1
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-f1}
+      POSTGRES_DB: f1strategy
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U f1 -d f1strategy"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  backend: &backend
+    build: ./backend
+    environment: &env
+      F1_DATABASE_URL: postgresql+psycopg://f1:${POSTGRES_PASSWORD:-f1}@db:5432/f1strategy
+      F1_CORS_ORIGINS: http://localhost:8080
+      F1_ARTIFACTS_DIR: /data/artifacts
+      F1_RAW_CACHE_DIR: /data/raw_cache
+    volumes: [appdata:/data]
+    depends_on:
+      db: { condition: service_healthy }
+    ports: ["8000:8000"]
+  frontend:
+    build: ./frontend
+    depends_on: [backend]
+    ports: ["8080:80"]
+  ingest:
+    <<: *backend
+    profiles: [tools]
+    ports: []
+    command: sh -c "python -m app.cli migrate && python -m app.cli ingest --season ${SEASON:-2024}"
+  train:
+    <<: *backend
+    profiles: [tools]
+    ports: []
+    command: python -m app.cli train --test-races ${TEST_RACES:-4}
+volumes:
+  pgdata:
+  appdata:

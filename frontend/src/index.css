@@ -65,3 +65,5 @@ table.compact input { width: 90px; }
 .explain { padding-left: 1.1rem; } .explain li { margin: .25rem 0; }
 details { margin: .5rem 0; } summary { cursor: pointer; color: var(--muted); }
 @media (max-width: 800px) { .app { grid-template-columns: 1fr; } .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; } .page { padding: 1rem; } }
+.brand small, .status small { display: block; color: var(--muted); font-weight: 400; font-size: .72rem; letter-spacing: 0; }
+.chips-inline { display: flex; gap: .75rem; flex-wrap: wrap; font-size: .8rem; }

@@ -51,7 +51,6 @@ def simulate_strategy(pace: np.ndarray, strategy: Strategy, cfg: StrategyConfig,
     """Returns total race time (ms) per simulation, shape (S,)."""
     n = cfg.total_laps
     pace = pace[:n, :n]
-    S = d.lap_noise.shape[0]
     base = np.zeros(n)
     stint_idx = np.zeros(n, dtype=int)
     lap = 0

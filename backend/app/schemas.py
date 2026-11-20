@@ -43,15 +43,15 @@ class StrategyParams(BaseModel):
 class OptimizeRequest(BaseModel):
     race_id: int = Field(ge=1)
     driver_id: str = Field(min_length=1, max_length=64)
-    params: StrategyParams = Field(default_factory=StrategyParams)
+    params: StrategyParams = Field(default_factory=lambda: StrategyParams())
 
 
 class SimulateRequest(BaseModel):
     race_id: int = Field(ge=1)
     driver_id: str = Field(min_length=1, max_length=64)
-    params: StrategyParams = Field(default_factory=StrategyParams)
+    params: StrategyParams = Field(default_factory=lambda: StrategyParams())
     strategies: list[list[StintPlan]] = Field(min_length=1, max_length=8)
-    safety_car: SafetyCarScenario = Field(default_factory=SafetyCarScenario)
+    safety_car: SafetyCarScenario = Field(default_factory=lambda: SafetyCarScenario())
     weather: list[WeatherWindow] = Field(default_factory=list, max_length=5)
     n_sims: int = Field(2000, ge=1, le=20_000)
     seed: int = Field(42, ge=0)

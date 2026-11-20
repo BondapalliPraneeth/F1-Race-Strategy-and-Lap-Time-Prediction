@@ -30,7 +30,7 @@ export default function Analysis() {
   return (
     <div className="page">
       <h1>Historical Race Analysis</h1>
-      <p className="lede">Actual lap times, stints and pit stops read from the PostgreSQL database.</p>
+      <p className="lede">Actual lap times, stints and pit stops read from the database.</p>
       <RaceSelector mode="multi" />
       {!sel.raceId && <Empty title="Choose a season and Grand Prix to begin" />}
       {sel.race && (

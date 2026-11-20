@@ -3,7 +3,6 @@ import time
 from typing import Annotated, Any
 
 import numpy as np
-import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import ValidationError
 from sqlalchemy import func, select, text
@@ -17,7 +16,7 @@ from app.models import Lap, ModelVersion, PitStop, Race, Result, Stint, Weather
 from app.schemas import OptimizeRequest, PredictRequest, SimulateRequest, StrategyParams
 from app.strategy import engine as E
 from app.strategy import simulate as S
-from app.strategy.config import Strategy, StrategyConfig, StintPlan
+from app.strategy.config import Strategy, StrategyConfig
 
 router = APIRouter(prefix="/api")
 Db = Annotated[Session, Depends(get_session)]
@@ -143,8 +142,8 @@ def predict(req: PredictRequest, session: Db) -> dict[str, Any]:
     return {"kind": "predicted", "predicted_ms": float(p["p50"]), "interval_80_ms": [float(p["p10"]), float(p["p90"])],
             "model_version": mv.id, "split": services.split_label(mv, race.id),
             "compound_used_by_model": "compound" in mv.feature_spec["categorical"],
-            "actual_ms": actual.lap_time_ms if comparable else None,
-            "error_ms": float(p["p50"] - actual.lap_time_ms) if comparable and actual else None,
+            "actual_ms": actual.lap_time_ms if comparable and actual else None,
+            "error_ms": float(p["p50"] - actual.lap_time_ms) if comparable and actual and actual.lap_time_ms else None,
             "actual_note": None if comparable else "no comparable clean actual lap at this lap/tyre age",
             "unseen_circuit": race.circuit_id not in services.bundle_for(mv).baselines}
 
@@ -165,8 +164,8 @@ def predict_vs_actual(race_id: int, driver_id: str, session: Db) -> dict[str, An
     return {"kind": "predicted_vs_actual", "available": True, "model_version": mv.id, "split": services.split_label(mv, race_id),
             "mae_ms": float(np.abs(err).mean()), "n": int(len(c)),
             "interval_80_coverage": float(((c["lap_time_ms"].to_numpy() >= p["p10"].to_numpy()) & (c["lap_time_ms"].to_numpy() <= p["p90"].to_numpy())).mean()),
-            "points": [{"lap_number": int(l), "tyre_age": int(a), "actual_ms": float(y), "p10": float(lo), "p50": float(m), "p90": float(hi)}
-                       for l, a, y, lo, m, hi in zip(c["lap_number"], c["tyre_age"], c["lap_time_ms"], p["p10"], p["p50"], p["p90"], strict=True)]}
+            "points": [{"lap_number": int(lap), "tyre_age": int(a), "actual_ms": float(y), "p10": float(lo), "p50": float(m), "p90": float(hi)}
+                       for lap, a, y, lo, m, hi in zip(c["lap_number"], c["tyre_age"], c["lap_time_ms"], p["p10"], p["p50"], p["p90"], strict=True)]}
 
 
 @router.get("/races/{race_id}/degradation")

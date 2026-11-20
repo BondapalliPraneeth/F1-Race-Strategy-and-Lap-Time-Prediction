@@ -21,7 +21,7 @@ export default function Models() {
         <>
           <Panel title={`Active model v${active.id}`} kind="actual" source="model registry (model_versions table), computed on held-out races">
             <div className="stats">
-              <Stat label="Held-out MAE (seen circuits)" value={s(met.mae_ms)} sub={`baseline ${s(met.baseline_circuit_median?.mae_ms)}`} />
+              <Stat label="Held-out MAE (seen circuits)" value={s(met.mae_ms)} sub={`baseline ${s(met.baseline_circuit_median_mae_ms)}`} />
               <Stat label="80 % interval coverage" value={pct(met.interval_80_coverage)} sub="nominal 80 %" />
               <Stat label="Train / test races" value={`${active.n_train_races} / ${active.n_test_races}`} sub="chronological split" />
               <Stat label="Seed" value={active.random_seed} sub={`data ${active.data_fingerprint.slice(0, 10)}`} />

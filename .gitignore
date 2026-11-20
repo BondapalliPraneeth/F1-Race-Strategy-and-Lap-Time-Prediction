@@ -12,3 +12,5 @@ backend/artifacts/
 .ruff_cache/
 frontend/test-results/
 playwright-report/
+frontend/playwright-report/
+frontend/test-results/

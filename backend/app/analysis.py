@@ -84,7 +84,8 @@ def degradation(session: Session, race_id: int, driver_id: str) -> dict[str, Any
     mine = clean[clean["driver_id"] == driver_id]
     stints = []
     all_stints = df[(df["driver_id"] == driver_id)].groupby("stint_number")
-    for sn, g_all in all_stints:
+    for sn_raw, g_all in all_stints:
+        sn = int(str(sn_raw))
         g = mine[mine["stint_number"] == sn].sort_values("tyre_age")
         entry: dict[str, Any] = {"stint_number": int(sn), "start_lap": int(g_all["lap_number"].min()), "end_lap": int(g_all["lap_number"].max()),
                                  "compound": None if g_all["compound"].isna().all() else str(g_all["compound"].dropna().iloc[0]),
