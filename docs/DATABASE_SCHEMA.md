@@ -32,11 +32,16 @@ erDiagram
 
 | Table | Constraint / index | Why |
 |---|---|---|
-| `races` | unique `(season, round)`; index `season` | idempotent upsert; season filter |
-| `results` | index `race_id` | driver list for a race |
-| `laps` | unique `(race_id, driver_id, lap_number)`; index `(race_id, lap_number)` | prevents duplicates; lap-range scans for a race |
-| `pit_stops`, `stints`, `weather` | index `race_id`; FK `ON DELETE CASCADE` | per-race reload deletes and re-inserts children |
+| `races` | unique `(season, round)`; index `circuit_id` (`ix_races_circuit`) | idempotent upsert; per-circuit lookups |
+| `results` | unique `(race_id, driver_id)` | one classification row per driver per race |
+| `laps` | unique `(race_id, driver_id, lap_number)`; index `(race_id, lap_number)`; index `race_id` | prevents duplicates; lap-range scans for a race |
+| `pit_stops` | unique `(race_id, driver_id, stop_number)`; index `race_id`; FK `ON DELETE CASCADE` | per-race reload deletes and re-inserts children |
+| `stints` | unique `(race_id, driver_id, stint_number)`; index `race_id`; FK cascade | same |
+| `weather` | index `race_id`; FK cascade | same |
+| `ingestion_runs` | index `(season, round)` | audit lookups |
 | `model_versions` | index `name` | active-model lookup |
+
+`tests/test_db.py` applies the real Alembic migration to a fresh database and asserts these constraints exist and are enforced.
 
 ## Semantics worth knowing
 

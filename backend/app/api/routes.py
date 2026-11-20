@@ -153,8 +153,8 @@ def predict_vs_actual(race_id: int, driver_id: str, session: Db) -> dict[str, An
     race = services.get_race(session, race_id)
     res = services.driver_context(session, race, driver_id)
     mv = services.active_model(session)
-    laps_df = F.load_laps(session)
-    d = laps_df[(laps_df.race_id == race_id) & (laps_df.driver_id == driver_id)]
+    laps_df = F.load_laps(session, race_id)
+    d = laps_df[laps_df.driver_id == driver_id]
     c = F.clean_laps(d) if not d.empty else d
     if c.empty:
         return {"kind": "predicted", "available": False, "reason": "no clean laps for this driver", "points": []}

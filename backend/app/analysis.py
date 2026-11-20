@@ -69,8 +69,7 @@ def degradation(session: Session, race_id: int, driver_id: str) -> dict[str, Any
        (ms/lap) with a standard error. Stints with <5 laps or a CI spanning zero are flagged uncertain.
     Compound is not published by the source; it is reported as null when absent.
     """
-    df = F.load_laps(session)
-    df = df[df["race_id"] == race_id]
+    df = F.load_laps(session, race_id)
     clean = F.clean_laps(df) if not df.empty else df
     if clean.empty or driver_id not in set(clean["driver_id"]):
         return {"available": False, "reason": "no clean laps for this driver/race", "stints": [], "fuel_slope_ms_per_lap": None}

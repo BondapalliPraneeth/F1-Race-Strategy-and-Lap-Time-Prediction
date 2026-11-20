@@ -14,8 +14,8 @@ OPTIONAL_CATEGORICAL = ["compound"]  # used only when the data actually has it
 TARGET = "delta_ms"  # lap time minus the circuit baseline (baseline fitted on training races only)
 
 
-def load_laps(session: Session) -> pd.DataFrame:
-    """All laps of fully ingested races, joined with race/circuit/result context."""
+def load_laps(session: Session, race_id: int | None = None) -> pd.DataFrame:
+    """Laps of fully ingested races (optionally one race), joined with race/circuit/result context."""
     q = (
         select(
             Lap.race_id, Race.season, Race.round, Race.circuit_id, Race.total_laps, Race.race_date,
@@ -27,6 +27,8 @@ def load_laps(session: Session) -> pd.DataFrame:
         .join(Result, (Result.race_id == Lap.race_id) & (Result.driver_id == Lap.driver_id))
         .where(Race.has_laps)
     )
+    if race_id is not None:
+        q = q.where(Lap.race_id == race_id)
     df = pd.DataFrame(session.execute(q).all(), columns=[c.key for c in q.selected_columns])
     if df.empty:
         return df
@@ -85,7 +87,8 @@ def reference_pace(df: pd.DataFrame, min_races: int = 3) -> dict[str, float]:
     """Median of per-race median lap times per circuit (robust to a few wet races); circuits with < min_races are skipped."""
     per_race = df.groupby(["circuit_id", "race_id"])["lap_time_ms"].median().reset_index()
     g = per_race.groupby("circuit_id")["lap_time_ms"]
-    return {c: float(v) for c, v in g.median().items() if g.count()[c] >= min_races}
+    counts = g.count().to_dict()
+    return {str(c): float(v) for c, v in g.median().items() if counts[c] >= min_races}
 
 
 def abnormal_pace_races(df: pd.DataFrame, reference: dict[str, float]) -> list[int]:

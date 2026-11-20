@@ -47,3 +47,17 @@ Each recommendation carries a plain-language explanation computed from the actua
 
 Every response lists the assumptions used so the UI can label them. The output is a *model-based recommendation*, not
 what a team would do: no tyre-set inventory, traffic, fuel load, undercut/overcut interaction or live state is modelled.
+
+## Strategy workflow
+
+```mermaid
+flowchart TD
+    REQ[POST /strategy/optimize<br/>race, driver, params] --> CFG[build StrategyConfig<br/>pit loss: data-derived or override]
+    CFG --> PT[pace table p50 per lap x tyre age<br/>cached per race, driver, model]
+    PT --> SEQ[enumerate compound sequences<br/>stops, min compounds, set limits]
+    SEQ --> DP[exact DP per sequence<br/>stint lengths and pit laps]
+    DP --> RANK[rank by total predicted time, top_k]
+    RANK --> WIN[pit windows within tolerance of optimum]
+    RANK --> EXP[numeric explanation + assumption notes]
+    RANK --> SIM[optional: POST /strategy/simulate<br/>Monte Carlo on chosen plans]
+```

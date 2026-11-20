@@ -67,7 +67,12 @@ jobs:
         run: npx playwright test
       - if: failure()
         uses: actions/upload-artifact@v4
-        with: { name: e2e-report, path: "frontend/playwright-report\nfrontend/test-results\napi.log" }
+        with:
+          name: e2e-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+            api.log
 
   docker:
     runs-on: ubuntu-latest

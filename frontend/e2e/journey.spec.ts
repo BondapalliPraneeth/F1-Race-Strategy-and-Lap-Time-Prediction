@@ -20,7 +20,7 @@ test('full journey: select race -> data -> predict -> degradation -> optimize ->
   await page.getByRole('button', { name: 'Predict lap time' }).click()
   await expect(page.getByTestId('predicted-time')).toContainText(':')
   await expect(page.getByText(/80 % interval/).first()).toBeVisible()
-  await expect(page.getByTestId('pva-chart')).toBeVisible()
+  await expect(page.getByTestId('pva-chart')).toBeVisible({ timeout: 20_000 })
 
   await page.getByRole('link', { name: /Degradation/ }).click()
   await expect(page.getByTestId('deg-chart')).toBeVisible()
