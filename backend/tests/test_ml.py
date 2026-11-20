@@ -93,3 +93,32 @@ def test_clean_laps_filters() -> None:
     df.loc[df.index[:5], "is_neutralised"] = True
     df.loc[df.index[5:10], "lap_time_ms"] = np.nan
     assert len(F.clean_laps(df)) <= len(df) - 10
+
+
+def test_abnormal_pace_race_is_flagged_from_lap_data() -> None:
+    df = synthetic(10)
+    wet = df.race_id == 5  # same circuit as other odd/even races, but 20 % slower -> flagged
+    df.loc[wet, "lap_time_ms"] *= 1.2
+    ref = F.reference_pace(df)
+    assert F.abnormal_pace_races(df, ref) == [5]
+
+
+def test_conformal_calibration_improves_coverage_on_shifted_data() -> None:
+    df = synthetic(10)
+    train, calib, test = df[df.race_id <= 6], df[df.race_id.between(7, 8)].copy(), df[df.race_id > 8].copy()
+    # simulate drift the quantile model has not seen: calibration and test laps are noisier than training laps
+    rng = np.random.default_rng(1)
+    for part in (calib, test):
+        part["lap_time_ms"] += rng.normal(0, 400, len(part))
+    b = T.fit(train)
+    y = test["lap_time_ms"].to_numpy()
+
+    def cover() -> float:
+        p = T.predict_ms(b, test)
+        return float(((y >= p["p10"]) & (y <= p["p90"])).mean())
+
+    before = cover()
+    b.conformal_q = T.calibrate(b, calib)
+    after = cover()
+    assert b.conformal_q > 0
+    assert after > before and after >= 0.7

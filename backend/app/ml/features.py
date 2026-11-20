@@ -64,3 +64,30 @@ def data_fingerprint(df: pd.DataFrame) -> str:
     """Stable hash of the training data (race ids, row count, lap-time sum) for reproducibility records."""
     key = f"{sorted(df['race_id'].unique().tolist())}|{len(df)}|{int(df['lap_time_ms'].sum())}"
     return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+ABNORMAL_PACE_RATIO = 1.06
+
+
+def race_pace_ratio(df: pd.DataFrame, reference: dict[str, float]) -> pd.Series:
+    """Per race: median clean lap / reference circuit pace. ~1.0 for a normal dry race; wet/red-flag-affected races are well above.
+
+    The weather table is empty (the data source publishes none), so this ratio is the only data-derived signal of
+    abnormal race conditions. It is used (a) to exclude such races from TRAINING and (b) to stratify reported metrics.
+    """
+    med = df.groupby("race_id")["lap_time_ms"].median()
+    circ = df.drop_duplicates("race_id").set_index("race_id")["circuit_id"]
+    ref = circ.map(reference)
+    return (med / ref).dropna()
+
+
+def reference_pace(df: pd.DataFrame, min_races: int = 3) -> dict[str, float]:
+    """Median of per-race median lap times per circuit (robust to a few wet races); circuits with < min_races are skipped."""
+    per_race = df.groupby(["circuit_id", "race_id"])["lap_time_ms"].median().reset_index()
+    g = per_race.groupby("circuit_id")["lap_time_ms"]
+    return {c: float(v) for c, v in g.median().items() if g.count()[c] >= min_races}
+
+
+def abnormal_pace_races(df: pd.DataFrame, reference: dict[str, float]) -> list[int]:
+    r = race_pace_ratio(df, reference)
+    return [int(i) for i in r[r > ABNORMAL_PACE_RATIO].index]

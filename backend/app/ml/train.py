@@ -38,6 +38,8 @@ class Bundle:
     categorical: list[str]
     baselines: dict[str, float]
     global_baseline: float
+    conformal_q: float = 0.0  # ms added to both interval ends (split conformalised quantile regression)
+    reference: dict[str, float] | None = None  # circuit reference pace used for the abnormal-race flag
 
 
 def split_races(df: pd.DataFrame, test_races: int) -> tuple[list[int], list[int]]:
@@ -64,7 +66,21 @@ def predict_ms(b: Bundle, df: pd.DataFrame) -> pd.DataFrame:
     """Returns p10/p50/p90 absolute lap-time predictions in ms (quantiles sorted to avoid crossing)."""
     X, base = _matrix(df, b), baseline_for(b, df["circuit_id"])
     q = np.sort(np.column_stack([b.models[k].predict(X) for k in QUANTILES]), axis=1) + base[:, None]
+    cq = getattr(b, "conformal_q", 0.0)
+    q[:, 0] -= cq
+    q[:, 2] += cq
     return pd.DataFrame(q, columns=["p10", "p50", "p90"], index=df.index)
+
+
+def calibrate(b: Bundle, calib: pd.DataFrame, coverage: float = 0.8) -> float:
+    """Split conformalised quantile regression (Romano et al. 2019): the finite-sample-corrected `coverage` quantile of
+    max(p10 - y, y - p90) on held-out calibration laps; adding it to both interval ends targets `coverage` marginally."""
+    raw = Bundle(b.models, b.encoder, b.numeric, b.categorical, b.baselines, b.global_baseline)
+    p = predict_ms(raw, calib)
+    y = calib["lap_time_ms"].to_numpy(dtype=float)
+    scores = np.maximum(p["p10"].to_numpy() - y, y - p["p90"].to_numpy())
+    n = len(scores)
+    return float(np.quantile(scores, min(1.0, coverage * (1 + 1 / n)), method="higher"))
 
 
 def fit(train: pd.DataFrame) -> Bundle:
@@ -104,7 +120,19 @@ def evaluate(b: Bundle, train: pd.DataFrame, test: pd.DataFrame) -> dict[str, An
     slope, icpt = np.polyfit(train["tyre_age"].astype(float), tr_delta.astype(float), 1)
     naive_age = naive + icpt + slope * test["tyre_age"].to_numpy(dtype=float)
     mae = lambda e: float(np.mean(np.abs(e)))  # noqa: E731
+    ratio = F.race_pace_ratio(test, b.reference or {})
+    abnormal = {int(r) for r in ratio[ratio > F.ABNORMAL_PACE_RATIO].index}
+    classified = {int(r) for r in ratio.index}
+    rid = test["race_id"].to_numpy()
+    strata: dict[str, Any] = {}
+    for name, ids in (("normal_pace_races", classified - abnormal), ("abnormal_pace_races", abnormal)):
+        mk = np.isin(rid, list(ids))
+        if mk.any():
+            strata[name] = {"race_ids": sorted(ids), "n_laps": int(mk.sum()), "mae_ms": mae(err[mk]), "baseline_circuit_median_mae_ms": mae(naive[mk] - y[mk]),
+                            "interval_80_coverage": float(((y[mk] >= pred["p10"].to_numpy()[mk]) & (y[mk] <= pred["p90"].to_numpy()[mk])).mean())}
     return {
+        "strata": strata,
+        "abnormal_pace_rule": f"race median clean lap > {F.ABNORMAL_PACE_RATIO}x circuit reference pace (proxy for wet/red-flag races; no weather data available)",
         "n_test_laps": int(len(test)),
         "mae_ms": mae(err), "rmse_ms": float(np.sqrt(np.mean(err**2))), "bias_ms": float(err.mean()),
         "baseline_circuit_median_mae_ms": mae(naive - y),
@@ -117,17 +145,31 @@ def evaluate(b: Bundle, train: pd.DataFrame, test: pd.DataFrame) -> dict[str, An
     }
 
 
-def train_and_register(session: Session, test_races: int = 4, name: str = "laptime") -> ModelVersion:
+def train_and_register(session: Session, test_races: int = 4, name: str = "laptime", calib_races: int = 3) -> ModelVersion:
     laps = F.load_laps(session)
     if laps.empty:
         raise ValueError("no ingested laps; run the ingestion first")
     train_ids, test_ids = split_races(laps, test_races)
     clean = F.clean_laps(laps)
-    train, test = clean[clean["race_id"].isin(train_ids)], clean[clean["race_id"].isin(test_ids)]
-    assert not set(train["race_id"]) & set(test["race_id"]), "train/test race overlap"
+    train_all, test = clean[clean["race_id"].isin(train_ids)], clean[clean["race_id"].isin(test_ids)]
+    assert not set(train_all["race_id"]) & set(test["race_id"]), "train/test race overlap"
+    # 1) drop abnormal-pace (wet / red-flag) races from training: with no weather feature they only add noise
+    reference = F.reference_pace(train_all)
+    excluded = F.abnormal_pace_races(train_all, reference)
+    train_ok = train_all[~train_all["race_id"].isin(excluded)]
+    # 2) the most recent training races become a calibration set for conformalised intervals
+    ok_ids = [r for r in train_ids if r not in excluded]
+    calib_ids = ok_ids[-calib_races:] if calib_races and len(ok_ids) > calib_races + 3 else []
+    train = train_ok[~train_ok["race_id"].isin(calib_ids)]
     bundle = fit(train)
+    bundle.reference = reference
+    if calib_ids:
+        bundle.conformal_q = calibrate(bundle, train_ok[train_ok["race_id"].isin(calib_ids)])
     metrics = evaluate(bundle, train, test)
     metrics["n_train_laps"] = int(len(train))
+    metrics["excluded_abnormal_training_races"] = [int(x) for x in excluded]
+    metrics["calibration_races"] = [int(x) for x in calib_ids]
+    metrics["conformal_q_ms"] = bundle.conformal_q
     out = Path(get_settings().artifacts_dir)
     out.mkdir(parents=True, exist_ok=True)
     session.query(ModelVersion).filter(ModelVersion.name == name).update({"is_active": False})
@@ -136,7 +178,7 @@ def train_and_register(session: Session, test_races: int = 4, name: str = "lapti
             "version": F.FEATURE_SPEC_VERSION, "numeric": bundle.numeric, "categorical": bundle.categorical,
             "target": "lap_time_ms - circuit_baseline (train-only median)", "quantiles": list(QUANTILES),
             "cleaning": "excl. lap 1, in/out laps, neutralised laps, >107% of driver race median"},
-        hyperparameters=HYPERPARAMS, train_races=[int(x) for x in train_ids], test_races=[int(x) for x in test_ids],
+        hyperparameters=HYPERPARAMS, train_races=[int(x) for x in train.race_id.unique()], test_races=[int(x) for x in test_ids],
         metrics=metrics, data_fingerprint=F.data_fingerprint(train), random_seed=SEED)
     session.add(mv)
     session.flush()

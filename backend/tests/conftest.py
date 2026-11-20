@@ -1,6 +1,9 @@
 """Test fixtures. TEST_DATABASE_URL selects the DB (CI uses PostgreSQL; default is in-memory SQLite)."""
 import os
-from collections.abc import Iterator
+
+os.environ.setdefault("OMP_NUM_THREADS", "2")  # tiny models: avoid OpenMP oversubscription slowing the suite
+os.environ.setdefault("LOKY_MAX_CPU_COUNT", "2")
+from collections.abc import Iterator  # noqa: E402
 
 import pytest
 from sqlalchemy import create_engine
