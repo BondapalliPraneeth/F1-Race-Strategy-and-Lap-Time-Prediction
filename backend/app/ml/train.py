@@ -85,6 +85,16 @@ def fit(train: pd.DataFrame) -> Bundle:
 
 
 def evaluate(b: Bundle, train: pd.DataFrame, test: pd.DataFrame) -> dict[str, Any]:
+    all_test = test
+    unseen_mask = ~all_test["circuit_id"].isin(b.baselines.keys())
+    unseen_info: dict[str, Any] = {"n_laps": int(unseen_mask.sum()), "circuits": sorted(all_test.loc[unseen_mask, "circuit_id"].unique().tolist())}
+    if unseen_mask.any():
+        ye = all_test.loc[unseen_mask, "lap_time_ms"].to_numpy(dtype=float)
+        unseen_info["mae_ms"] = float(np.mean(np.abs(predict_ms(b, all_test[unseen_mask])["p50"].to_numpy() - ye)))
+        unseen_info["note"] = "no circuit history in training data: absolute pace is not identifiable; excluded from headline metrics"
+    test = all_test[~unseen_mask]  # headline metrics: circuits with training history
+    if test.empty:
+        return {"n_test_laps": 0, "unseen_circuit_laps": unseen_info, "error": "no held-out laps at circuits seen in training"}
     y = test["lap_time_ms"].to_numpy(dtype=float)
     pred = predict_ms(b, test)
     err = pred["p50"].to_numpy() - y
@@ -102,7 +112,8 @@ def evaluate(b: Bundle, train: pd.DataFrame, test: pd.DataFrame) -> dict[str, An
         "baseline_circuit_median_plus_tyre_age_mae_ms": mae(naive_age - y),
         "interval_80_coverage": float(((y >= pred["p10"]) & (y <= pred["p90"])).mean()),
         "interval_80_mean_width_ms": float((pred["p90"] - pred["p10"]).mean()),
-        "share_laps_at_unseen_circuits": float(1 - seen.mean()),
+        "unseen_circuit_laps": unseen_info,
+        "headline_scope": "held-out races, laps at circuits present in training data",
         "per_race_mae_ms": {int(r): mae(err[(test["race_id"] == r).to_numpy()]) for r in test["race_id"].unique()},
     }
 

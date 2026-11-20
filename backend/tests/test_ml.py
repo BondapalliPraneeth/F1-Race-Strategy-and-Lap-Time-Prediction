@@ -65,7 +65,7 @@ def test_model_beats_baselines_on_unseen_races_with_calibrated_interval() -> Non
     m = T.evaluate(b, train, test)
     assert m["mae_ms"] < 0.5 * m["baseline_circuit_median_mae_ms"]
     assert 0.65 <= m["interval_80_coverage"] <= 0.95
-    assert m["share_laps_at_unseen_circuits"] == 0
+    assert m["unseen_circuit_laps"]["n_laps"] == 0
 
 
 def test_model_recovers_known_tyre_degradation_and_is_deterministic() -> None:
