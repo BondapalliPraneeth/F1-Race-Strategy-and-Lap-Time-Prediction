@@ -10,7 +10,7 @@
    model-based recommendation, not a team call, and has not been validated against real strategy outcomes.
 5. **Pit loss** is estimated from recorded stop durations plus lap-time effects; stops absent from the source are not seen.
 6. **Prediction accuracy is limited and reported honestly** (see MODEL_EVALUATION). Unseen circuits fall back to a
-   global baseline and are flagged in the API (`unseen_circuit`). Few seasons ⇒ few circuits with ≥3 races.
+   global baseline and are flagged in the API (`unseen_circuit`). Few seasons ⇒ few circuits with ≥2 training races, so the wet-race detector cannot classify them.
 7. **Monte Carlo is a sensitivity tool.** Noise terms are Gaussian; SC probability and timing are assumptions.
 8. **Scale.** Single-process API, in-memory LRU caches, no auth or rate limiting. Fine for a portfolio/demo deployment, not production.
 9. **Source availability.** Jolpica is community-run and rate-limited (observed HTTP 429); full-season ingestion takes

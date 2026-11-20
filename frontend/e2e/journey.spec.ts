@@ -32,8 +32,14 @@ test('full journey: select race -> data -> predict -> degradation -> optimize ->
   await expect(page.getByTestId('pit-windows')).toBeVisible()
 
   await page.getByRole('link', { name: /Simulat/ }).click()
-  await page.getByRole('textbox', { name: 'Strategy 1' }).fill('MEDIUM:20, HARD:20')
-  await page.getByRole('textbox', { name: 'Strategy 2' }).fill('SOFT:10, HARD:30')
+  // Learn the race distance from the app's own validation message so the test works on any database.
+  await page.getByRole('textbox', { name: 'Strategy 1' }).fill('MEDIUM:5, HARD:5')
+  const msg = (await page.getByRole('alert').first().textContent()) ?? ''
+  const total = Number(/race is (\d+) laps/.exec(msg)?.[1])
+  expect(total).toBeGreaterThan(10)
+  const a = Math.floor(total / 2)
+  await page.getByRole('textbox', { name: 'Strategy 1' }).fill(`MEDIUM:${a}, HARD:${total - a}`)
+  await page.getByRole('textbox', { name: 'Strategy 2' }).fill(`SOFT:${Math.floor(total / 4)}, HARD:${total - Math.floor(total / 4)}`)
   await page.getByLabel('Simulations').fill('300')
   await page.getByRole('button', { name: 'Run simulation' }).click()
   await expect(page.getByTestId('sim-table')).toBeVisible()

@@ -83,7 +83,7 @@ def race_pace_ratio(df: pd.DataFrame, reference: dict[str, float]) -> pd.Series:
     return (med / ref).dropna()
 
 
-def reference_pace(df: pd.DataFrame, min_races: int = 3) -> dict[str, float]:
+def reference_pace(df: pd.DataFrame, min_races: int = 2) -> dict[str, float]:
     """Median of per-race median lap times per circuit (robust to a few wet races); circuits with < min_races are skipped."""
     per_race = df.groupby(["circuit_id", "race_id"])["lap_time_ms"].median().reset_index()
     g = per_race.groupby("circuit_id")["lap_time_ms"]

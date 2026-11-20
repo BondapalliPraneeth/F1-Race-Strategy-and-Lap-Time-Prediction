@@ -36,7 +36,7 @@ Screenshots (real data): [analysis](docs/screenshots/01-analysis.png), [predicti
 
 ## Results (real, held-out future races)
 
-Model v4 trained on 73 races (2021–2024) and tested on the last four races of 2024:
+Model v5 trained on 73 races (2021–2024) and tested on the last four races of 2024:
 MAE **3,034 ms** vs **3,281 ms** circuit-median baseline; 80 % interval coverage **0.65** (target 0.80); the dry
 races have MAE 0.8–2.0 s, the wet São Paulo race 8.2 s. Details and caveats: [MODEL_EVALUATION](docs/MODEL_EVALUATION.md).
 

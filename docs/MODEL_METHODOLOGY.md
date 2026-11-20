@@ -28,9 +28,8 @@ calibration. No random lap-level split (that would leak a race's pace into its o
 
 ## Abnormal-pace races (wet / red-flag proxy)
 Because there is no weather data, a race is flagged when its median clean lap exceeds **1.06 ×** the circuit's
-reference pace (median of per-race medians; needs ≥ 3 races at the circuit). Flagged races are excluded from
-training/calibration and reported as a separate stratum. With < 3 seasons of a circuit nothing qualifies there, so nothing is
-flagged. On the current data it excludes 4 training races but misses the wet São Paulo 2024 test race (`strata: {}`), so it is a coarse proxy.
+reference pace (median of per-race medians; needs ≥ 2 races at the circuit). Flagged races are excluded from
+training/calibration and reported as a separate stratum. Circuits with fewer than 2 races in the training data cannot be classified. On the current data the rule excludes 4 training races and flags the wet São Paulo 2024 test race; it is a coarse proxy, not a weather model.
 
 ## Interval calibration (split conformalised quantile regression)
 Raw p10–p90 intervals under-cover on new races. The last 3 non-abnormal **training** races (held out from fitting) are
